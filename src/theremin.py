@@ -18,6 +18,14 @@ try:
     import psutil
 except ImportError:
     psutil = None
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.image import Image
+from kivy.uix.label import Label
+from kivy.uix.slider import Slider
+from kivy.graphics.texture import Texture
+from kivy.clock import Clock
+from kivy.graphics import Color, Line
 
 class CameraCapture:
     """Classe para captura de vídeo com OpenCV.
@@ -164,6 +172,68 @@ class SoundGenerator:
             self.stream.close()
             self.stream = None
 
+class ThereminUI(App):
+    """Kivy App for Invisible Theremin with camera preview, frequency label, pitch slider, and hand landmarks overlay."""
+    def build(self):
+        self.cam = CameraCapture()
+        self.hand_proc = HandProcessor()
+        self.sound_gen = SoundGenerator()
+        self.sound_gen.start_stream()
+        self.current_freq = 440.0
+        self.current_pitch = 1.0
+        self.frame = None
+        layout = BoxLayout(orientation='vertical', spacing=10)
+        self.image_widget = Image(size_hint_y=0.8)
+        self.freq_label = Label(text=f'Frequency: {self.current_freq:.1f} Hz', font_size='20sp', size_hint_y=0.1)
+        self.pitch_slider = Slider(min=0.5, max=2.0, value=1.0, step=0.01, size_hint_y=0.1)
+        self.pitch_slider.bind(value=self.on_slider_change)
+        layout.add_widget(self.image_widget)
+        layout.add_widget(self.freq_label)
+        layout.add_widget(self.pitch_slider)
+        Clock.schedule_interval(self.update, 1.0/20.0)
+        return layout
+
+    def on_slider_change(self, instance, value):
+        self.current_pitch = value
+        self.sound_gen.update_parameters(self.current_freq, self.current_pitch)
+
+    def update(self, dt):
+        frame = self.cam.get_frame()
+        if frame is None:
+            return
+        gestures = self.hand_proc.process(frame)
+        # Frequency from right hand height
+        if gestures['right_hand'] is not None and gestures['gestures']['right_height'] is not None:
+            self.current_freq = 200.0 + 1800.0 * np.clip(gestures['gestures']['right_height'], 0.0, 1.0)
+        else:
+            self.current_freq = 440.0
+        # Pitch from slider (UI) or left pinch
+        if gestures['left_hand'] is not None:
+            if gestures['gestures']['left_pinch']:
+                self.current_pitch = 2.0
+        self.sound_gen.update_parameters(self.current_freq, self.current_pitch)
+        self.freq_label.text = f'Frequency: {self.current_freq:.1f} Hz'
+        # Convert frame to Kivy texture
+        buf = frame.flatten()
+        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='rgb')
+        texture.blit_buffer(buf, colorfmt='rgb', bufferfmt='ubyte')
+        self.image_widget.texture = texture
+        # Draw hand landmarks overlay
+        self.image_widget.canvas.after.clear()
+        with self.image_widget.canvas.after:
+            Color(0, 1, 0, 0.7)
+            for hand in ['left_hand', 'right_hand']:
+                points = gestures[hand]
+                if points:
+                    w, h = frame.shape[1], frame.shape[0]
+                    for x, y, z in points:
+                        px, py = int(x * w), int(y * h)
+                        Line(circle=(px, h-py, 4), width=1.5)
+
+    def on_stop(self):
+        self.cam.release()
+        self.sound_gen.stop_stream()
+
 def main_loop():
     """Main integration loop: video capture, gesture processing, sound synthesis, and performance logging."""
     cam = CameraCapture()
@@ -238,5 +308,5 @@ if __name__ == "__main__":
         assert 'right_hand' in results, "HandProcessor output missing 'right_hand' key."
         print("HandProcessor static image test OK.")
     
-    # Uncomment to run the main loop (requires camera and audio output)
-    # main_loop()
+    # Uncomment the line below to run the Kivy UI (requires camera and audio output)
+    # ThereminUI().run()
