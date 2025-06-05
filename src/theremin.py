@@ -12,6 +12,12 @@ import numpy as np
 import mediapipe as mp
 import sounddevice as sd
 import threading
+import time
+import json
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 class CameraCapture:
     """Classe para captura de vídeo com OpenCV.
@@ -158,6 +164,59 @@ class SoundGenerator:
             self.stream.close()
             self.stream = None
 
+def main_loop():
+    """Main integration loop: video capture, gesture processing, sound synthesis, and performance logging."""
+    cam = CameraCapture()
+    hand_proc = HandProcessor()
+    sound_gen = SoundGenerator()
+    sound_gen.start_stream()
+    frame_count = 0
+    start_time = time.time()
+    last_log_time = start_time
+    fps = 0.0
+    try:
+        while True:
+            loop_start = time.time()
+            frame = cam.get_frame()
+            if frame is None:
+                print("No camera frame available.")
+                time.sleep(0.05)
+                continue
+            gestures = hand_proc.process(frame)
+            freq = 440.0
+            pitch = 1.0
+            if gestures['right_hand'] is not None and gestures['gestures']['right_height'] is not None:
+                freq = 200.0 + 1800.0 * np.clip(gestures['gestures']['right_height'], 0.0, 1.0)
+            if gestures['left_hand'] is not None:
+                pitch = 2.0 if gestures['gestures']['left_pinch'] else 1.0
+            sound_gen.update_parameters(freq, pitch)
+            frame_count += 1
+            elapsed = time.time() - start_time
+            if elapsed > 0:
+                fps = frame_count / elapsed
+            # Log every 30 frames
+            if frame_count % 30 == 0:
+                latency_ms = (time.time() - loop_start) * 1000.0
+                cpu = psutil.cpu_percent() if psutil else 0.0
+                ram = psutil.virtual_memory().used / (1024 * 1024) if psutil else 0.0
+                log = {
+                    "timestamp": int(time.time()),
+                    "fps": round(fps, 2),
+                    "latency_ms": round(latency_ms, 2),
+                    "cpu_usage": round(cpu, 2),
+                    "ram_mb": round(ram, 2)
+                }
+                print(json.dumps(log))
+            # Maintain ~20 FPS
+            loop_time = time.time() - loop_start
+            sleep_time = max(0, (1.0/20.0) - loop_time)
+            time.sleep(sleep_time)
+    except KeyboardInterrupt:
+        print("Exiting main loop.")
+    finally:
+        cam.release()
+        sound_gen.stop_stream()
+
 # Teste unitário básico
 if __name__ == "__main__":
     # Teste da captura de vídeo
@@ -178,3 +237,6 @@ if __name__ == "__main__":
         results = processor.process(img_rgb)
         assert 'right_hand' in results, "HandProcessor output missing 'right_hand' key."
         print("HandProcessor static image test OK.")
+    
+    # Uncomment to run the main loop (requires camera and audio output)
+    # main_loop()
