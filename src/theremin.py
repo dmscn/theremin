@@ -14,6 +14,7 @@ import sounddevice as sd
 import threading
 import time
 import json
+import queue
 try:
     import psutil
 except ImportError:
@@ -84,7 +85,16 @@ class HandProcessor:
                 'gestures': {'left_pinch': bool, 'right_height': float}
             }
         """
-        results = self.hands.process(frame)
+        # Batch processing: process only every 2 frames
+        if not hasattr(self, '_frame_count'):
+            self._frame_count = 0
+            self._last_result = None
+        self._frame_count += 1
+        if self._frame_count % 2 != 0:
+            return self._last_result if self._last_result else {
+                'left_hand': None, 'right_hand': None, 'gestures': {'left_pinch': False, 'right_height': None}
+            }
+        results = self.hands.process(frame.astype(np.float32))
         left_hand = None
         right_hand = None
         left_pinch = False
@@ -93,7 +103,7 @@ class HandProcessor:
             for idx, hand_handedness in enumerate(results.multi_handedness):
                 label = hand_handedness.classification[0].label.lower()
                 landmarks = results.multi_hand_landmarks[idx].landmark
-                coords = [(lm.x, lm.y, lm.z) for lm in landmarks]
+                coords = [(np.float32(lm.x), np.float32(lm.y), np.float32(lm.z)) for lm in landmarks]
                 if label == 'left':
                     left_hand = coords
                     # Pinch: distance between thumb tip (4) and index tip (8)
@@ -103,7 +113,7 @@ class HandProcessor:
                     right_hand = coords
                     # Height: y of wrist (0), invert (top=1.0, bottom=0.0)
                     right_height = 1.0 - coords[0][1]
-        return {
+        self._last_result = {
             'left_hand': left_hand,
             'right_hand': right_hand,
             'gestures': {
@@ -111,6 +121,7 @@ class HandProcessor:
                 'right_height': right_height
             }
         }
+        return self._last_result
 
 class SoundGenerator:
     """Real-time sound synthesis using SoundDevice (square wave, buffer 512 samples).
@@ -132,14 +143,20 @@ class SoundGenerator:
         self.phase = 0.0
         self.stream = None
         self.lock = threading.Lock()
+        self.audio_queue = queue.Queue(maxsize=4)
+        self._audio_thread = None
+        self._running = False
+        self._prealloc_buffer = np.zeros((self.buffer_size, 1), dtype=np.float32)
 
     def audio_callback(self, outdata, frames, time, status):
         """Callback for SoundDevice stream. Generates square wave audio."""
-        t = (np.arange(frames) + self.phase) / self.sample_rate
+        # Use preallocated buffer and float32
+        t = (np.arange(frames, dtype=np.float32) + self.phase) / self.sample_rate
         with self.lock:
-            freq = self.frequency * self.pitch
+            freq = np.float32(self.frequency * self.pitch)
         wave = 0.5 * (1 + np.sign(np.sin(2 * np.pi * freq * t)))
-        outdata[:frames, 0] = wave.astype(np.float32)
+        self._prealloc_buffer[:frames, 0] = wave.astype(np.float32)
+        outdata[:frames, 0] = self._prealloc_buffer[:frames, 0]
         self.phase = (self.phase + frames) % self.sample_rate
 
     def update_parameters(self, freq: float, pitch: float) -> None:
@@ -164,13 +181,23 @@ class SoundGenerator:
                 callback=self.audio_callback
             )
             self.stream.start()
+            self._running = True
+            if self._audio_thread is None:
+                self._audio_thread = threading.Thread(target=self._audio_worker, daemon=True)
+                self._audio_thread.start()
+
+    def _audio_worker(self):
+        while self._running:
+            time.sleep(0.01)
 
     def stop_stream(self) -> None:
         """Stop the audio output stream."""
+        self._running = False
         if self.stream is not None:
             self.stream.stop()
             self.stream.close()
             self.stream = None
+        self._audio_thread = None
 
 class ThereminUI(App):
     """Kivy App for Invisible Theremin with camera preview, frequency label, pitch slider, and hand landmarks overlay."""
