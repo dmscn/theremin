@@ -1,0 +1,36 @@
+1. **Contexto do Projeto**: Instrumento musical virtual que transforma gestos de mão em sons sintetizados via Python[1][4]
+2. **Stack Técnica Principal**:
+   - Visão Computacional: MediaPipe Hands + OpenCV
+   - Síntese Sonora: SoundDevice + PyAudio
+   - Interface: Kivy Framework
+   - Otimização: Buildozer + NDK Android[1][4]
+
+3. **Requisitos de Performance**:
+   - Latência total <30ms
+   - Consumo RAM <300MB
+   - Compatibilidade Android 12+[1][5]
+
+4. **Padrões de Código**:
+   - Nomenclatura em inglês técnico
+   - Tipagem estática via annotations
+   - Docstrings no estilo Google[3][4]
+
+5. **Arquitetura de Implementação**:
+   1. Captura de vídeo: 640x480 @ 20fps
+   2. Processamento gestual: MediaPipe com latência <17ms
+   3. Mapeamento sonoro:
+      - Eixo Y → Frequência (200-2000Hz)
+      - Distância entre dedos → Pitch (0.5-2.0)
+   4. Buffer de áudio: 512 samples @ 44.1kHz[1][4]
+
+6. **Diretivas para IA**:
+   - Priorizar eficiência sobre abstração
+   - Manter compatibilidade Android
+   - Evitar dependências não essenciais[1][4]
+
+7. **Fluxo de Desenvolvimento**:
+   - Configurar ambiente via requirements.txt:
+     mediapipe==0.10.9
+     kivy==2.3.0
+     sounddevice==0.4.6
+   - Implementar classe principal InvisibleTheremin com estrutura específica[1][4]
