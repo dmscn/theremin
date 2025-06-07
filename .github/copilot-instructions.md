@@ -1,112 +1,160 @@
 # Contexto do Projeto Teremim Invisível
 
 ## Objetivo Principal
-Desenvolver um instrumento musical virtual que transforme gestos de mão capturados por câmera em sons sintetizados em tempo real, utilizando Python como linguagem principal.
+Desenvolver um instrumento musical virtual que transforme gestos de mão capturados via streaming RTMP em sons sintetizados em tempo real, utilizando Python como linguagem principal.
 
 ## Público-Alvo
 - Músicos experimentais
 - Entusiastas de tecnologia
 - Artistas de performance digital
 
-## Stack Técnica
+## Stack Técnica Atualizada
 ```
 {
+  "Streaming": ["RTMP", "node-media-server"],
   "Visão Computacional": ["MediaPipe Hands", "OpenCV"],
   "Síntese Sonora": ["SoundDevice", "PyAudio"],
-  "Interface": ["Kivy Framework"],
-  "Otimização": ["Buildozer", "NDK Android"]
+  "Infraestrutura": ["Docker", "WSL2 (Windows)"]
 }
 ```
 
 ## Arquitetura Básica
-1. **Captura de Vídeo**: Pipeline de 640x480 @ 20fps
-2. **Processamento Gestual**: Landmarks 3D com MediaPipe (latência <17ms)
-3. **Mapeamento Sonoro**:
+1. **Recepção de Vídeo via RTMP**: URL configurável via `.env`
+2. **Servidor RTMP Integrado**: Node.js + node-media-server em container Docker
+3. **Processamento Gestual**: Landmarks 3D com MediaPipe (<17ms latency)
+4. **Mapeamento Sonoro**:
    - Eixo Y → Frequência (200-2000Hz)
    - Distância entre dedos → Pitch (0.5-2.0)
-4. **Saída de Áudio**: Buffer circular de 512 samples @ 44.1kHz
+5. **Saída de Áudio**: Buffer circular de 512 samples @ 44.1kHz
 
-## Requisitos de Performance
-- Latência total <30ms
-- Consumo RAM <300MB
-- Compatibilidade Android 12+
-```
-
-## 2. Guia de Implementação (`implementation-guide.prompt.md`)
-```markdown
-# Fluxo de Desenvolvimento Recomendado
-
-## Etapas Cruciais
-1. Configurar ambiente Python com dependências via `requirements.txt`:
-   ```
-   mediapipe==0.10.9
-   kivy==2.3.0
-   sounddevice==0.4.6
-   ```
-
-2. Implementar classe principal `InvisibleTheremin` com:
-   ```
-   class InvisibleTheremin:
-       def __init__(self):
-           self.cap = cv2.VideoCapture(0)
-           self.hands = mp.solutions.hands.Hands(
-               model_complexity=0,
-               max_num_hands=2
-           )
-       
-       def audio_callback(self, outdata, frames, time, status):
-           # Implementar síntese FM aqui
-   ```
-
-3. Padrões de Código:
-   - Nomes em inglês técnico
-   - Tipagem estática via annotations
-   - Docstrings no formato Google Style
-
-## Dicas para Copilot
-- Priorizar eficiência sobre abstração
-- Evitar dependências externas não essenciais
-- Manter compatibilidade com Android via Buildozer
-```
-
-## Estrutura de Arquivos Necessária
+## Nova Estrutura do Projeto
 ```
 .
-├── .github/
-│   └── copilot-instructions.md
-├── implementation-guide.prompt.md
-└── src/
-    └── theremin.py
+├── .env
+├── docker-compose.yml
+├── app/
+│   ├── main.py
+│   └── requirements.txt
+└── rtmp-server/
+    ├── Dockerfile
+    ├── server.js
+    └── package.json
 ```
 
-Para maximizar a eficiência do Copilot:
+## Configuração do RTMP Server
+**rtmp-server/Dockerfile**:
+```
+FROM node:18-alpine
 
-1. Mantenha ambos arquivos atualizados durante o desenvolvimento
-2. Use comandos específicos no chat:
-   ```markdown
-   @workspace Consulte a seção de mapeamento sonoro no guia
-   ```
-3. Combine com annotations no código:
-   ```python
-   # COPILOT: Otimizar para latência usando buffer circular
-   ```
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --production
 
-## Instruções de Estilo e Fluxo para Copilot
+COPY server.js .
 
-### Comentários no Código
+EXPOSE 1935 8000
+CMD ["node", "server.js"]
+```
 
-**Evite comentários desnecessários no meio do código.**  
-Apenas adicione comentários que sejam essenciais para explicar decisões de design, algoritmos complexos ou lógicas não óbvias.  
-**Todos os comentários de documentação devem ser docstrings no padrão Python, seguindo o estilo Google ou similar (equivalente ao JSDoc em JavaScript).**  
-Docstrings devem ser usadas para documentar funções, classes e módulos públicos, descrevendo propósito, parâmetros, retornos e exemplos relevantes[1][11][3].
+**rtmp-server/server.js**:
+```
+const NodeMediaServer = require('node-media-server');
 
-### Proposta de Implementação
+const config = {
+  rtmp: { port: 1935, chunk_size: 60000 },
+  http: { port: 8000, allow_origin: '*' }
+};
 
-**Sempre envie uma proposta de implementação detalhada antes de iniciar a execução de qualquer modificação.**  
-A proposta deve incluir:
-- **Descrição clara da solução**
-- **Estrutura do código sugerido**
-- **Justificativa para escolhas técnicas**
-- **Impactos esperados na performance e manutenibilidade**
+const nms = new NodeMediaServer(config);
+nms.run();
+```
 
-Apenas após a aprovação da proposta, prossiga com a implementação.
+## Implementação Python
+**app/main.py**:
+```
+import os
+import cv2
+
+RTMP_URL = os.getenv('RTMP_INPUT_URL')
+
+cap = cv2.VideoCapture(RTMP_URL)
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if ret:
+        # Processamento dos gestos
+        cv2.imshow('RTMP Input', frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+## Docker Compose
+```
+version: '3.8'
+
+services:
+  rtmp-server:
+    build: ./rtmp-server
+    ports:
+      - "1935:1935" # RTMP
+      - "8000:8000" # Monitoramento
+    networks:
+      - theremin-net
+
+  app:
+    build: ./app
+    environment:
+      - RTMP_INPUT_URL=rtmp://rtmp-server:1935/live/stream
+    depends_on:
+      - rtmp-server
+    networks:
+      - theremin-net
+
+networks:
+  theremin-net:
+```
+
+## Variáveis de Ambiente (.env)
+```
+RTMP_INPUT_URL=rtmp://localhost:1935/live/stream
+```
+
+## Fluxo de Trabalho
+1. Iniciar serviços:
+```
+docker-compose up --build
+```
+
+2. Transmitir para o servidor RTMP:
+```
+ffmpeg -f avfoundation -i "default" -c:v libx264 -f flv rtmp://localhost:1935/live/stream
+```
+
+3. Acessar estatísticas:
+```
+http://localhost:8000
+```
+
+## Vantagens da Nova Arquitetura
+- **Agnosticismo de dispositivo**: Funciona com qualquer fonte RTMP (webcam, smartphone, arquivo)
+- **Isolamento de dependências**: Servidor RTMP em container separado
+- **Monitoramento integrado**: Stats via HTTP na porta 8000
+- **Configuração simplificada**: Apenas 1 variável de ambiente
+
+## Requisitos de Performance Mantidos
+- Latência total <30ms (incluindo streaming)
+- Consumo RAM <300MB
+- Compatibilidade multiplataforma
+
+```
+
+Principais mudanças implementadas:
+1. Substituição do acesso direto à webcam por streaming RTMP
+2. Adição do servidor RTMP containerizado
+3. Nova estrutura de pastas com separação clara de serviços
+4. Configuração de rede dedicada entre containers
+5. Documentação do fluxo de trabalho com ffmpeg
