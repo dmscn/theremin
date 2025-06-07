@@ -1,88 +1,67 @@
-# 🎹 Teremim Invisível
+# RTMP Video Consumer
 
-Transforme seu dispositivo em um instrumento musical virtual usando gestos de mão capturados pela câmera!  
-Este projeto utiliza Python, MediaPipe, Kivy e SoundDevice para criar uma experiência lúdica e interativa, permitindo que qualquer pessoa toque um "teremim virtual" sem precisar de hardware especializado.
+Este projeto consome um stream de vídeo RTMP e exibe em tempo real em uma janela.
 
----
+## Pré-requisitos
+- Python 3.9+
+- Node.js 18+
+- Um serviço RTMP rodando na rede local (pode ser o `rtmp-server` deste repositório)
 
-## 🎯 Objetivo
+## Configuração
+1. Copie o arquivo `.env.example` para `.env` e edite a variável `RTMP_URL` com o endpoint do seu stream RTMP.
 
-Desenvolver uma aplicação que transforme gestos de mão em sons sintetizados em tempo real, priorizando baixa latência, fluidez e uma interface intuitiva.
+```zsh
+cp .env.example .env
+# Edite .env conforme necessário
+```
 
----
+2. Instale as dependências Python:
+```zsh
+python3 -m venv .venv
+pip install -r requirements.txt
+```
 
-## ✨ Funcionalidades Principais
+3. Instale as dependências do servidor RTMP (Node.js):
+```zsh
+cd rtmp-server
+npm install
+cd ..
+```
 
-- **Captura de vídeo em tempo real** usando a câmera do dispositivo
-- **Detecção de gestos de mão** com MediaPipe Hands
-- **Controle sonoro intuitivo**:
-  - Elevar/descender a mão direita: altera a altura da nota (frequência)
-  - Gesto de pinça com a mão esquerda: ajusta o pitch geral do som
-- **Geração de sons sintéticos** no estilo synthwave/teremim
-- **Feedback visual** simples e intuitivo na tela
+## Como executar
 
----
+### 1. Iniciar o servidor RTMP
 
-## 🛠️ Tecnologias
+Utilize o Makefile:
+```zsh
+make rtmp-server
+```
 
-- **Python 3.11+**
-- **MediaPipe Hands** para detecção de gestos
-- **Kivy** para interface multiplataforma
-- **SoundDevice** para síntese sonora de baixa latência
-- **OpenCV** para captura de vídeo
+O servidor estará disponível em `rtmp://<SEU_IP_LOCAL>:1935/livestream` e o painel web em `http://localhost:8000`.
 
----
+### 2. Enviar vídeo para o servidor RTMP
 
-## 🚀 Como Executar
+Exemplo usando ffmpeg (Linux):
+```zsh
+ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -f flv rtmp://localhost:1935/livestream
+```
 
-1. **Clone o repositório:**
-   ```
-   git clone https://github.com/seu-usuario/teremim-invisivel.git
-   cd teremim-invisivel
-   ```
+Ou utilize um app de streaming no Android apontando para o mesmo endpoint.
 
-2. **Instale as dependências:**
-   ```
-   pip install -r requirements.txt
-   ```
+### 3. Executar o consumidor Python
 
-3. **Execute o projeto:**
-   ```
-   python main.py
-   ```
+```zsh
+make run
+```
 
----
+O vídeo será exibido em uma janela. Pressione `q` para fechar.
 
-## 🎛️ Requisitos Técnicos
+## Estrutura
+- `src/main.py`: Consome e exibe o vídeo RTMP
+- `src/config.py`: Carrega variáveis do .env
+- `rtmp-server/`: Servidor RTMP local (Node.js)
 
-- **Dispositivo com câmera**
-- **Python 3.11+**
-- **Permissão de acesso à câmera**
-- **Sistema operacional compatível** (Windows, Linux, macOS ou Android via Buildozer)
-
----
-
-## 📅 Checkpoints de Desenvolvimento
-
-O projeto foi estruturado em etapas granulares para facilitar o acompanhamento e a colaboração:
-
-1. **Configuração do ambiente base**
-2. **Captura de vídeo e pipeline inicial**
-3. **Detecção de gestos com MediaPipe**
-4. **Síntese sonora em tempo real**
-5. **Loop principal de integração**
-6. **Interface Kivy com feedback visual**
-7. **Otimização de performance**
-8. **Testes e validação final**
-
----
-
-## 🤝 Contribua
-
-Sinta-se à vontade para abrir issues, sugerir melhorias ou enviar pull requests!
-
----
-
-## 📄 Licença
-
-[MIT](LICENSE)
+## Observações
+- O serviço RTMP deve estar ativo e acessível na rede local.
+- O app é agnóstico à origem do vídeo, apenas consome o endpoint RTMP definido.
+- Não é mais necessário Docker para nenhum serviço.
